@@ -1,101 +1,148 @@
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-const cors = require("cors");
+import express from "express";
+import http from "http";
+import { Server } from "socket.io";
 
 const app = express();
-app.use(cors());
-
 const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "*"
+    origin: "http://localhost:3000",
+    methods: ["GET", "POST"]
   }
 });
 
-// In-memory room storage
 const rooms = {};
+
+function generateRoomId() {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
+
+function broadcastRooms() {
+  const activeRooms = Object.entries(rooms).map(([id, room]) => ({
+    id,
+    players: room.users.length,
+    revealed: room.revealed
+  }));
+
+  io.emit("activeRooms", activeRooms);
+}
 
 io.on("connection", (socket) => {
   console.log("Client connected:", socket.id);
 
-  // CREATE ROOM
-  socket.on("createRoom", ({ name }, callback) => {
-    const roomId = Math.random()
-      .toString(36)
-      .substring(2, 8)
-      .toUpperCase();
+  // Send rooms immediately
+  socket.emit("activeRooms",
+    Object.entries(rooms).map(([id, room]) => ({
+      id,
+      players: room.users.length,
+      revealed: room.revealed
+    }))
+  );
+
+  socket.on("createRoom", (name, callback) => {
+    if (!name) return;
+
+    const roomId = generateRoomId();
 
     rooms[roomId] = {
-    roomId,
-    users: [
-        {
-        id: socket.id,
-        name,
-        vote: null
-        }
-    ],
-    revealed: false
+      users: [{ id: socket.id, name }],
+      votes: {},
+      revealed: false
     };
 
     socket.join(roomId);
-
     console.log(`Room ${roomId} created by ${name}`);
 
-    callback(roomId);
-    io.to(roomId).emit("roomUpdated", rooms[roomId]);
+    broadcastRooms();
+
+    if (typeof callback === "function") {
+      callback(roomId);
+    }
   });
 
-  // JOIN ROOM
   socket.on("joinRoom", ({ roomId, name }) => {
     const room = rooms[roomId];
     if (!room) return;
 
-    room.users.push({
-    id: socket.id,
-    name,
-    vote: null
-    });    socket.join(roomId);
+    const exists = room.users.some(u => u.id === socket.id);
+    if (!exists) {
+      room.users.push({ id: socket.id, name });
+      socket.join(roomId);
+      console.log(`${name} joined room ${roomId}`);
+    }
 
-    console.log(`${name} joined room ${roomId}`);
-    io.to(roomId).emit("roomUpdated", room);
+    socket.emit("roomState", {
+      roomId,
+      users: room.users,
+      votes: room.votes,
+      revealed: room.revealed
+    });
+
+    broadcastRooms();
   });
 
-// CAST VOTE
-    socket.on("vote", ({ roomId, card }) => {
+  socket.on("castVote", ({ roomId, value }) => {
     const room = rooms[roomId];
     if (!room || room.revealed) return;
 
-    const user = room.users.find(u => u.id === socket.id);
-    if (!user) return;
+    room.votes[socket.id] = value;
 
-    user.vote = card;
-    io.to(roomId).emit("roomUpdated", room);
+    io.to(roomId).emit("roomState", {
+      roomId,
+      users: room.users,
+      votes: room.votes,
+      revealed: room.revealed
     });
-    // REVEAL VOTES
-    socket.on("revealVotes", (roomId) => {
+  });
+
+  socket.on("revealVotes", (roomId) => {
     const room = rooms[roomId];
     if (!room) return;
 
     room.revealed = true;
-    io.to(roomId).emit("roomUpdated", room);
+    broadcastRooms();
+
+    io.to(roomId).emit("roomState", {
+      roomId,
+      users: room.users,
+      votes: room.votes,
+      revealed: room.revealed
     });
-    // RESET ROUND
-    socket.on("resetVotes", (roomId) => {
+  });
+
+  socket.on("resetVotes", (roomId) => {
     const room = rooms[roomId];
     if (!room) return;
 
+    room.votes = {};
     room.revealed = false;
-    room.users.forEach(u => (u.vote = null));
+    broadcastRooms();
 
-    io.to(roomId).emit("roomUpdated", room);
+    io.to(roomId).emit("roomState", {
+      roomId,
+      users: room.users,
+      votes: room.votes,
+      revealed: room.revealed
     });
+  });
 
+  socket.on("disconnect", () => {
+    for (const id in rooms) {
+      rooms[id].users = rooms[id].users.filter(
+        u => u.id !== socket.id
+      );
+      delete rooms[id].votes[socket.id];
+
+      if (rooms[id].users.length === 0) {
+        delete rooms[id];
+      }
+    }
+
+    broadcastRooms();
+  });
 });
 
-const PORT = process.env.PORT || 4000;
-
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+server.listen(4000, () => {
+  console.log("Server running on port 4000");
 });

@@ -1,104 +1,174 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { socket } from "@/lib/socket";
 
-const CARDS = ["0", "1", "2", "3", "5", "8", "13", "21", "?"];
+const COLORS = {
+  bg: "#050B16",
+  panel: "#0B1C2D",
+  border: "#1E3A5F",
+  accent: "#7FFFD4",
+  text: "#E6F1FF",
+  muted: "#8AA4BF"
+};
 
-export default function Home() {
+export default function LobbyPage() {
+  const router = useRouter();
   const [name, setName] = useState("");
-  const [roomId, setRoomId] = useState("");
-  const [room, setRoom] = useState(null);
+  const [rooms, setRooms] = useState([]);
 
   useEffect(() => {
-    socket.on("roomUpdated", setRoom);
-    return () => socket.off("roomUpdated");
+    socket.on("activeRooms", setRooms);
+    return () => socket.off("activeRooms");
   }, []);
 
   const createRoom = () => {
-    if (!name) return alert("Enter your name");
+    if (!name.trim()) return alert("Enter your name");
+    localStorage.setItem("name", name);
 
-    socket.emit("createRoom", { name }, (id) => {
-      setRoomId(id);
+    socket.emit("createRoom", name, (roomId) => {
+      router.push(`/room/${roomId}`);
     });
   };
 
-  const joinRoom = () => {
-    if (!name || !roomId) return alert("Missing fields");
-    socket.emit("joinRoom", { roomId, name });
+  const joinRoom = (roomId) => {
+    if (!name.trim()) return alert("Enter your name first");
+    localStorage.setItem("name", name);
+    router.push(`/room/${roomId}`);
   };
 
-  const vote = (card) => {
-    socket.emit("vote", { roomId, card });
-  };
-
-  if (!room) {
-    return (
-      <main style={{ padding: 40 }}>
-        <h1>Planning Poker</h1>
+  return (
+    <main style={page}>
+      <section style={hero}>
+        <h1 style={title}>
+          Planning <span style={{ color: COLORS.accent }}>Poker</span>
+        </h1>
+        <p style={subtitle}>Estimate together, reveal together.</p>
 
         <input
           placeholder="Your name"
           value={name}
           onChange={e => setName(e.target.value)}
+          style={input}
         />
 
-        <div style={{ marginTop: 10 }}>
-          <button onClick={createRoom}>Create Room</button>
-        </div>
-
-        <div style={{ marginTop: 20 }}>
-          <input
-            placeholder="Room ID"
-            value={roomId}
-            onChange={e => setRoomId(e.target.value.toUpperCase())}
-          />
-          <button onClick={joinRoom}>Join Room</button>
-        </div>
-      </main>
-    );
-  }
-
-  return (
-    <main style={{ padding: 40 }}>
-      <h2>Room {room.roomId}</h2>
-
-      <h3>Players</h3>
-      {room.users.map(u => (
-        <div key={u.id}>
-          {u.name}:{" "}
-          {room.revealed
-            ? u.vote ?? "-"
-            : u.vote
-            ? "✓"
-            : "-"}
-        </div>
-      ))}
-
-      <h3 style={{ marginTop: 20 }}>Choose a card</h3>
-      {CARDS.map(card => (
-        <button
-          key={card}
-          disabled={room.revealed}
-          onClick={() => vote(card)}
-          style={{ marginRight: 5 }}
-        >
-          {card}
+        <button onClick={createRoom} style={primaryButton}>
+          Create New Room
         </button>
-      ))}
+      </section>
 
-      <div style={{ marginTop: 20 }}>
-        <button onClick={() => socket.emit("revealVotes", roomId)}>
-          Reveal
-        </button>
+      <section style={roomsPanel}>
+        <h2 style={roomsTitle}>Active Rooms</h2>
 
-        <button
-          style={{ marginLeft: 10 }}
-          onClick={() => socket.emit("resetVotes", roomId)}
-        >
-          Reset
-        </button>
-      </div>
+        {rooms.length === 0 && (
+          <p style={muted}>No active rooms</p>
+        )}
+
+        <div style={roomList}>
+          {rooms.map(room => (
+            <button
+              key={room.id}
+              style={roomCard}
+              onClick={() => joinRoom(room.id)}
+            >
+              <div>
+                <strong>Room {room.id}</strong>
+                <p style={muted}>
+                  {room.players} players
+                </p>
+              </div>
+
+              <span style={{
+                color: room.revealed
+                  ? COLORS.muted
+                  : COLORS.accent
+              }}>
+                {room.revealed ? "Revealed" : "Voting"}
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
     </main>
   );
 }
+
+/* ---------- Styles ---------- */
+
+const page = {
+  minHeight: "100vh",
+  background: COLORS.bg,
+  color: COLORS.text,
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr"
+};
+
+const hero = {
+  padding: "80px",
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "center",
+  gap: 20
+};
+
+const title = {
+  fontSize: 56,
+  fontWeight: 700
+};
+
+const subtitle = {
+  fontSize: 18,
+  color: COLORS.muted
+};
+
+const roomsPanel = {
+  padding: "60px",
+  background: COLORS.panel,
+  borderLeft: `1px solid ${COLORS.border}`,
+  overflowY: "auto"
+};
+
+const roomsTitle = {
+  fontSize: 24,
+  marginBottom: 24
+};
+
+const roomList = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 12
+};
+
+const roomCard = {
+  background: COLORS.bg,
+  border: `1px solid ${COLORS.border}`,
+  borderRadius: 12,
+  padding: 16,
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  cursor: "pointer"
+};
+
+const input = {
+  padding: "12px 14px",
+  borderRadius: 8,
+  border: `1px solid ${COLORS.border}`,
+  background: "#071425",
+  color: COLORS.text,
+  fontSize: 16
+};
+
+const primaryButton = {
+  padding: "14px 18px",
+  background: COLORS.accent,
+  color: COLORS.bg,
+  border: "none",
+  borderRadius: 8,
+  fontWeight: 700,
+  cursor: "pointer",
+  width: "fit-content"
+};
+
+const muted = { color: COLORS.muted };
