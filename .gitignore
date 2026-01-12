@@ -1,0 +1,17 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Next.js
+.next/
+out/
+.env*
+.vercel
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Azure
+.azure
