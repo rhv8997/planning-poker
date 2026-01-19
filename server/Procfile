@@ -2,5 +2,5 @@
 cwd = "server"
 
 [start]
-cmd = "node index.js"
-port = 8080
+cmd = "npm install && node index.js"
+port = $PORT
