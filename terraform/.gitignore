@@ -1,0 +1,32 @@
+# Terraform files
+*.tfstate
+*.tfstate.*
+*.tfvars.json
+.terraform/
+.terraform.lock.hcl
+tfplan
+*.backup
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Deployment packages
+*.zip
+deployment.zip
+deployment-frontend.zip
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log

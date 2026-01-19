@@ -1,0 +1,6 @@
+[build]
+cwd = "server"
+
+[start]
+cmd = "node index.js"
+port = 8080
