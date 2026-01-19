@@ -1,6 +1,1 @@
-[build]
-cwd = "server"
-
-[start]
-cmd = "npm install && node index.js"
-port = $PORT
+web: node index.js
