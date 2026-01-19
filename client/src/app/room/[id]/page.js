@@ -6,12 +6,6 @@ import { socket } from "@/lib/socket";
 
 const CARD_VALUES = ["0", "1", "2", "3", "5", "8", "13", "21", "?"];
 
-export async function generateStaticParams() {
-  return [];
-}
-
-export const dynamic = 'force-dynamic';
-
 const COLORS = {
   bg: "#050B16",
   panel: "#0B1C2D",
