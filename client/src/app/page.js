@@ -143,26 +143,41 @@ export default function LobbyPage() {
             const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
             return (
-              <button
+              <div
                 key={room.id}
                 style={roomCard}
-                onClick={() => openJoinModal(room.id)}
               >
                 <div>
-                  <strong>{room.roomName || `Room ${room.id}`}</strong>
+                  <strong style={{ color: COLORS.text }}>{room.roomName || `Room ${room.id}`}</strong>
                   <p style={muted}>
                     {room.players} players • {timeStr}
                   </p>
+                  <span style={{
+                    color: room.revealed
+                      ? COLORS.muted
+                      : COLORS.accent,
+                    fontSize: 14
+                  }}>
+                    {room.revealed ? "Revealed" : "Voting"}
+                  </span>
                 </div>
 
-                <span style={{
-                  color: room.revealed
-                    ? COLORS.muted
-                    : COLORS.accent
-                }}>
-                  {room.revealed ? "Revealed" : "Voting"}
-                </span>
-              </button>
+                <button
+                  style={{
+                    padding: "10px 24px",
+                    background: COLORS.accent,
+                    color: COLORS.bg,
+                    border: "none",
+                    borderRadius: 8,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontSize: 14
+                  }}
+                  onClick={() => openJoinModal(room.id)}
+                >
+                  Join
+                </button>
+              </div>
             );
           })}
         </div>
@@ -249,8 +264,7 @@ const roomCard = {
   padding: 16,
   display: "flex",
   justifyContent: "space-between",
-  alignItems: "center",
-  cursor: "pointer"
+  alignItems: "center"
 };
 
 const input = {

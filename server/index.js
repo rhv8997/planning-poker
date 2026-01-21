@@ -91,17 +91,28 @@ io.on("connection", (socket) => {
 
     const exists = room.users.some(u => u.id === socket.id);
 
-    // Check if name is already taken by a different user
-    const nameTaken = room.users.some(u => u.name === name && u.id !== socket.id);
-    if (nameTaken) {
-      console.log(`Name "${name}" is already taken in room ${roomId}`);
-      if (typeof callback === "function") {
-        callback({ success: false, error: "Name already taken" });
-      }
-      return;
-    }
+    // Check if name is already taken by a different socket
+    const existingUser = room.users.find(u => u.name === name && u.id !== socket.id);
+    if (existingUser) {
+      // Replace the old socket with the new one (handles multiple tabs/refresh)
+      console.log(`Replacing old socket for "${name}" in room ${roomId}`);
 
-    if (!exists) {
+      // Transfer votes if they had any
+      if (room.votes[existingUser.id]) {
+        room.votes[socket.id] = room.votes[existingUser.id];
+        delete room.votes[existingUser.id];
+      }
+
+      // Transfer scrum master role if they were scrum master
+      if (room.scrumMasterId === existingUser.id) {
+        room.scrumMasterId = socket.id;
+      }
+
+      // Remove old user and add new one
+      room.users = room.users.filter(u => u.id !== existingUser.id);
+      room.users.push({ id: socket.id, name });
+      console.log(`${name} (${socket.id}) replaced old connection in room ${roomId}`);
+    } else if (!exists) {
       room.users.push({ id: socket.id, name });
       console.log(`${name} (${socket.id}) joined room ${roomId}`);
     } else {

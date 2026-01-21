@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { socket } from "@/lib/socket";
 
@@ -19,6 +19,7 @@ const COLORS = {
 
 export default function RoomPage() {
   const { id: roomId } = useParams();
+  const router = useRouter();
   const [room, setRoom] = useState(null);
   const [selected, setSelected] = useState(null);
   const [sessionTotal, setSessionTotal] = useState(0);
@@ -59,48 +60,47 @@ export default function RoomPage() {
       setMySocketId(socket.id);
     }
 
-    const handleConnect = () => {
-      console.log("Socket connected with ID:", socket.id);
-      setMySocketId(socket.id);
-
-      // Join room after connection
+    const attemptJoin = (retryCount = 0) => {
       if (roomId && name && !joinedRef.current) {
-        joinedRef.current = true;
-        console.log("Joining room:", roomId, "as", name);
+        console.log("Joining room:", roomId, "as", name, retryCount > 0 ? `(retry ${retryCount})` : "");
         socket.emit("joinRoom", { roomId, name }, (response) => {
           if (!response.success) {
             console.log("Failed to join room:", response.error);
-            joinedRef.current = false; // Reset so they can try again
-            // Clear the name and show modal again
-            localStorage.removeItem("name");
-            setName(null);
-            setInputName("");
-            alert(response.error === "Name already taken"
-              ? "This name is already taken. Please choose a different name."
-              : response.error);
+
+            // If name is taken and this is a retry (likely a refresh race condition), try again
+            if (response.error === "Name already taken" && retryCount < 3) {
+              console.log("Retrying join after delay...");
+              setTimeout(() => {
+                joinedRef.current = false;
+                attemptJoin(retryCount + 1);
+              }, 500);
+            } else {
+              // After retries exhausted or other error, clear name and show modal
+              joinedRef.current = false;
+              localStorage.removeItem("name");
+              setName(null);
+              setInputName("");
+              alert(response.error === "Name already taken"
+                ? "This name is already taken. Please choose a different name."
+                : response.error);
+            }
+          } else {
+            joinedRef.current = true;
           }
         });
       }
     };
 
+    const handleConnect = () => {
+      console.log("Socket connected with ID:", socket.id);
+      setMySocketId(socket.id);
+      attemptJoin();
+    };
+
     // If already connected, join immediately
     if (socket.connected && roomId && name && !joinedRef.current) {
-      joinedRef.current = true;
       setMySocketId(socket.id);
-      console.log("Already connected, joining room:", roomId, "as", name);
-      socket.emit("joinRoom", { roomId, name }, (response) => {
-        if (!response.success) {
-          console.log("Failed to join room:", response.error);
-          joinedRef.current = false; // Reset so they can try again
-          // Clear the name and show modal again
-          localStorage.removeItem("name");
-          setName(null);
-          setInputName("");
-          alert(response.error === "Name already taken"
-            ? "This name is already taken. Please choose a different name."
-            : response.error);
-        }
-      });
+      attemptJoin();
     }
 
     socket.on("connect", handleConnect);
@@ -458,6 +458,23 @@ export default function RoomPage() {
           Scrum Master: {room.users.find(u => u.id === room.scrumMasterId)?.name || "Unknown"}
         </div>
       )}
+      <button
+        style={{
+          marginTop: "auto",
+          padding: "12px 20px",
+          background: COLORS.panel,
+          color: COLORS.text,
+          border: `1px solid ${COLORS.border}`,
+          borderRadius: 8,
+          fontWeight: 600,
+          cursor: "pointer",
+          fontSize: 14,
+          width: "100%"
+        }}
+        onClick={() => router.push("/")}
+      >
+        ← Back to Lobby
+      </button>
     </aside>
 
     {/* Name Entry Modal */}
