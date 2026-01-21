@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { socket } from "@/lib/socket";
 
-const CARD_VALUES = ["0", "1", "2", "3", "5", "8", "13", "21", "?", "⏸"];
+const CARD_VALUES = ["0.5", "1", "2", "3", "5", "8", "13", "21", "?", "⏸"];
 
 
 const COLORS = {
@@ -33,8 +33,17 @@ export default function RoomPage() {
       ? localStorage.getItem("name")
       : null
   );
+  const [, setTick] = useState(0);
 
   const isScrumMaster = room?.scrumMasterId === mySocketId;
+
+  // Update timer every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTick(t => t + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Show name modal if no name exists
   useEffect(() => {
@@ -236,12 +245,23 @@ export default function RoomPage() {
     socket.emit("revokeScrumMaster", roomId);
   };
 
+  // Calculate elapsed time
+  const elapsed = room.createdAt ? Date.now() - room.createdAt : 0;
+  const hours = Math.floor(elapsed / 3600000);
+  const minutes = Math.floor((elapsed % 3600000) / 60000);
+  const seconds = Math.floor((elapsed % 60000) / 1000);
+  const timeStr = hours > 0
+    ? `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+    : `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
   return (
     <div style={pageWrapper}>
       <main style={page}>
       <header style={header}>
-        <h1>{room.roomName || `Room ${room.roomId}`}</h1>
-        <span style={muted}>{room.users.length} players</span>
+        <div>
+          <h1>{room.roomName || `Room ${room.roomId}`}</h1>
+          <span style={muted}>{room.users.length} players</span>
+        </div>
       </header>
 
       {/* PLAYER CARDS - CENTER */}
@@ -342,6 +362,10 @@ export default function RoomPage() {
 
     {/* STATS SIDEBAR */}
     <aside style={sidebar}>
+      <div style={statsCard}>
+        <div style={statsLabel}>Session duration</div>
+        <div style={statsValue}>{timeStr}</div>
+      </div>
       <div style={statsCard}>
         <div style={statsLabel}>Average</div>
         <div style={statsValue}>{room.revealed ? average : "?"}</div>

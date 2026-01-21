@@ -31,7 +31,8 @@ function broadcastRooms() {
     id,
     roomName: room.roomName,
     players: room.users.length,
-    revealed: room.revealed
+    revealed: room.revealed,
+    createdAt: room.createdAt
   }));
 
   io.emit("activeRooms", activeRooms);
@@ -64,7 +65,8 @@ io.on("connection", (socket) => {
       votes: {},
       revealed: false,
       scrumMasterId: null,
-      roomName: roomName || roomId
+      roomName: roomName || roomId,
+      createdAt: Date.now()
     };
 
     socket.join(roomId);
@@ -131,7 +133,8 @@ io.on("connection", (socket) => {
       users: room.users,
       votes: room.votes,
       revealed: room.revealed,
-      scrumMasterId: room.scrumMasterId
+      scrumMasterId: room.scrumMasterId,
+      createdAt: room.createdAt
     });
 
     broadcastRooms();
@@ -149,7 +152,8 @@ io.on("connection", (socket) => {
       users: room.users,
       votes: room.votes,
       revealed: room.revealed,
-      scrumMasterId: room.scrumMasterId
+      scrumMasterId: room.scrumMasterId,
+      createdAt: room.createdAt
     });
   });
 
@@ -166,7 +170,8 @@ io.on("connection", (socket) => {
       users: room.users,
       votes: room.votes,
       revealed: room.revealed,
-      scrumMasterId: room.scrumMasterId
+      scrumMasterId: room.scrumMasterId,
+      createdAt: room.createdAt
     });
   });
 
@@ -184,7 +189,8 @@ io.on("connection", (socket) => {
       users: room.users,
       votes: room.votes,
       revealed: room.revealed,
-      scrumMasterId: room.scrumMasterId
+      scrumMasterId: room.scrumMasterId,
+      createdAt: room.createdAt
     });
   });
 
@@ -210,7 +216,8 @@ io.on("connection", (socket) => {
         users: room.users,
         votes: room.votes,
         revealed: room.revealed,
-        scrumMasterId: room.scrumMasterId
+        scrumMasterId: room.scrumMasterId,
+        createdAt: room.createdAt
       });
     } else {
       console.log(`Scrum master already exists: ${room.scrumMasterId}`);
@@ -240,7 +247,8 @@ io.on("connection", (socket) => {
         users: room.users,
         votes: room.votes,
         revealed: room.revealed,
-        scrumMasterId: room.scrumMasterId
+        scrumMasterId: room.scrumMasterId,
+        createdAt: room.createdAt
       });
     } else {
       console.log(`Only the current scrum master can revoke the role`);

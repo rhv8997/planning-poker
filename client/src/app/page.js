@@ -24,6 +24,15 @@ export default function LobbyPage() {
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [selectedRoomId, setSelectedRoomId] = useState(null);
   const [joinName, setJoinName] = useState("");
+  const [, setTick] = useState(0);
+
+  // Update timer every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTick(t => t + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     console.log("Socket connected:", socket.connected);
@@ -127,28 +136,35 @@ export default function LobbyPage() {
         )}
 
         <div style={roomList}>
-          {rooms.map(room => (
-            <button
-              key={room.id}
-              style={roomCard}
-              onClick={() => openJoinModal(room.id)}
-            >
-              <div>
-                <strong>{room.roomName || `Room ${room.id}`}</strong>
-                <p style={muted}>
-                  {room.players} players
-                </p>
-              </div>
+          {rooms.map(room => {
+            const elapsed = room.createdAt ? Date.now() - room.createdAt : 0;
+            const minutes = Math.floor(elapsed / 60000);
+            const seconds = Math.floor((elapsed % 60000) / 1000);
+            const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
-              <span style={{
-                color: room.revealed
-                  ? COLORS.muted
-                  : COLORS.accent
-              }}>
-                {room.revealed ? "Revealed" : "Voting"}
-              </span>
-            </button>
-          ))}
+            return (
+              <button
+                key={room.id}
+                style={roomCard}
+                onClick={() => openJoinModal(room.id)}
+              >
+                <div>
+                  <strong>{room.roomName || `Room ${room.id}`}</strong>
+                  <p style={muted}>
+                    {room.players} players • {timeStr}
+                  </p>
+                </div>
+
+                <span style={{
+                  color: room.revealed
+                    ? COLORS.muted
+                    : COLORS.accent
+                }}>
+                  {room.revealed ? "Revealed" : "Voting"}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </section>
 
