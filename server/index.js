@@ -77,18 +77,37 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("joinRoom", ({ roomId, name }) => {
+  socket.on("joinRoom", ({ roomId, name }, callback) => {
     const room = rooms[roomId];
     if (!room) {
       console.log(`Room ${roomId} not found`);
+      if (typeof callback === "function") {
+        callback({ success: false, error: "Room not found" });
+      }
       return;
     }
 
     const exists = room.users.some(u => u.id === socket.id);
+
+    // Check if name is already taken by a different user
+    const nameTaken = room.users.some(u => u.name === name && u.id !== socket.id);
+    if (nameTaken) {
+      console.log(`Name "${name}" is already taken in room ${roomId}`);
+      if (typeof callback === "function") {
+        callback({ success: false, error: "Name already taken" });
+      }
+      return;
+    }
+
     if (!exists) {
       room.users.push({ id: socket.id, name });
       console.log(`${name} (${socket.id}) joined room ${roomId}`);
     } else {
+      // Update the name if user is rejoining
+      const user = room.users.find(u => u.id === socket.id);
+      if (user) {
+        user.name = name;
+      }
       console.log(`${name} (${socket.id}) rejoined room ${roomId}`);
     }
 
@@ -99,6 +118,11 @@ io.on("connection", (socket) => {
       users: room.users.map(u => `${u.name}(${u.id})`),
       scrumMasterId: room.scrumMasterId
     });
+
+    // Send success callback
+    if (typeof callback === "function") {
+      callback({ success: true });
+    }
 
     // Broadcast to ALL users in the room (including the one who just joined)
     io.to(roomId).emit("roomState", {

@@ -24,14 +24,24 @@ export default function RoomPage() {
   const [sessionTotal, setSessionTotal] = useState(0);
   const [chosenCard, setChosenCard] = useState(null);
   const [mySocketId, setMySocketId] = useState(null);
+  const [showNameModal, setShowNameModal] = useState(false);
+  const [inputName, setInputName] = useState("");
   const joinedRef = useRef(false);
 
-  const name =
+  const [name, setName] = useState(
     typeof window !== "undefined"
       ? localStorage.getItem("name")
-      : null;
+      : null
+  );
 
   const isScrumMaster = room?.scrumMasterId === mySocketId;
+
+  // Show name modal if no name exists
+  useEffect(() => {
+    if (typeof window !== "undefined" && !name) {
+      setShowNameModal(true);
+    }
+  }, [name]);
 
   // Capture socket ID and join room
   useEffect(() => {
@@ -48,7 +58,19 @@ export default function RoomPage() {
       if (roomId && name && !joinedRef.current) {
         joinedRef.current = true;
         console.log("Joining room:", roomId, "as", name);
-        socket.emit("joinRoom", { roomId, name });
+        socket.emit("joinRoom", { roomId, name }, (response) => {
+          if (!response.success) {
+            console.log("Failed to join room:", response.error);
+            joinedRef.current = false; // Reset so they can try again
+            // Clear the name and show modal again
+            localStorage.removeItem("name");
+            setName(null);
+            setInputName("");
+            alert(response.error === "Name already taken"
+              ? "This name is already taken. Please choose a different name."
+              : response.error);
+          }
+        });
       }
     };
 
@@ -57,7 +79,19 @@ export default function RoomPage() {
       joinedRef.current = true;
       setMySocketId(socket.id);
       console.log("Already connected, joining room:", roomId, "as", name);
-      socket.emit("joinRoom", { roomId, name });
+      socket.emit("joinRoom", { roomId, name }, (response) => {
+        if (!response.success) {
+          console.log("Failed to join room:", response.error);
+          joinedRef.current = false; // Reset so they can try again
+          // Clear the name and show modal again
+          localStorage.removeItem("name");
+          setName(null);
+          setInputName("");
+          alert(response.error === "Name already taken"
+            ? "This name is already taken. Please choose a different name."
+            : response.error);
+        }
+      });
     }
 
     socket.on("connect", handleConnect);
@@ -66,23 +100,94 @@ export default function RoomPage() {
 
   // Room updates
   useEffect(() => {
+    console.log("Setting up roomState listener");
     const handler = (state) => {
-      console.log("Room state updated:", state);
+      console.log("=== ROOM STATE RECEIVED ===");
+      console.log("Room state:", state);
       console.log("My socket ID:", socket.id);
       console.log("Scrum master ID:", state.scrumMasterId);
       console.log("Am I scrum master?", socket.id === state.scrumMasterId);
+      console.log("Setting room state...");
       setRoom(state);
+      console.log("Room state set successfully");
       // Always update socket ID when we get room state
       if (socket.id) {
         setMySocketId(socket.id);
       }
     };
     socket.on("roomState", handler);
-    return () => socket.off("roomState", handler);
+    console.log("roomState listener attached");
+    return () => {
+      console.log("Removing roomState listener");
+      socket.off("roomState", handler);
+    };
   }, []);
 
+  // Handler for name submission (defined before early return)
+  const handleNameSubmit = () => {
+    if (!inputName.trim()) return alert("Enter your name");
+    localStorage.setItem("name", inputName);
+    setName(inputName);
+    setShowNameModal(false);
+  };
+
   if (!room) {
-    return <main style={page}>Loading room…</main>;
+    return (
+      <>
+        <main style={{
+          ...page,
+          background: COLORS.bg,
+          minHeight: "100vh"
+        }}>
+          <div>Loading room…</div>
+          <div style={{ fontSize: 12, color: COLORS.muted, marginTop: 8 }}>
+            Socket ID: {mySocketId || "connecting..."}
+          </div>
+          <div style={{ fontSize: 12, color: COLORS.muted }}>
+            Name: {name || "not set"}
+          </div>
+        </main>
+
+        {/* Name Entry Modal */}
+        {showNameModal && (
+          <div style={modalOverlay} onClick={(e) => e.stopPropagation()}>
+            <div style={modalContent} onClick={(e) => e.stopPropagation()}>
+              <h2 style={{ marginBottom: 24, fontSize: 24, color: COLORS.text }}>Enter Your Name</h2>
+              <input
+                placeholder="Your name"
+                value={inputName}
+                onChange={(e) => setInputName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleNameSubmit()}
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 8,
+                  border: `1px solid ${COLORS.border}`,
+                  background: "#071425",
+                  color: COLORS.text,
+                  fontSize: 16,
+                  width: "100%",
+                  marginBottom: 24,
+                  boxSizing: "border-box"
+                }}
+                autoFocus
+              />
+              <button onClick={handleNameSubmit} style={{
+                padding: "14px 28px",
+                background: COLORS.accent,
+                color: COLORS.bg,
+                border: "none",
+                borderRadius: 8,
+                fontWeight: 700,
+                cursor: "pointer",
+                width: "100%"
+              }}>
+                Join Room
+              </button>
+            </div>
+          </div>
+        )}
+      </>
+    );
   }
 
   const hasVoted = (id) => room.votes[id] !== undefined;
@@ -330,6 +435,26 @@ export default function RoomPage() {
         </div>
       )}
     </aside>
+
+    {/* Name Entry Modal */}
+    {showNameModal && (
+      <div style={modalOverlay} onClick={(e) => e.stopPropagation()}>
+        <div style={modalContent} onClick={(e) => e.stopPropagation()}>
+          <h2 style={{ marginBottom: 24, fontSize: 24 }}>Enter Your Name</h2>
+          <input
+            placeholder="Your name"
+            value={inputName}
+            onChange={(e) => setInputName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleNameSubmit()}
+            style={input}
+            autoFocus
+          />
+          <button onClick={handleNameSubmit} style={primaryButton}>
+            Join Room
+          </button>
+        </div>
+      </div>
+    )}
     </div>
   );
 }
@@ -546,4 +671,39 @@ const statsValue = {
   fontSize: 28,
   fontWeight: 700,
   color: COLORS.accent
+};
+
+/* --- MODAL --- */
+
+const modalOverlay = {
+  position: "fixed",
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  background: "rgba(0, 0, 0, 0.7)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 1000
+};
+
+const modalContent = {
+  background: COLORS.panel,
+  padding: 32,
+  borderRadius: 12,
+  border: `1px solid ${COLORS.border}`,
+  minWidth: 400,
+  maxWidth: 500
+};
+
+const input = {
+  padding: "12px 14px",
+  borderRadius: 8,
+  border: `1px solid ${COLORS.border}`,
+  background: "#071425",
+  color: COLORS.text,
+  fontSize: 16,
+  width: "100%",
+  marginBottom: 24
 };
