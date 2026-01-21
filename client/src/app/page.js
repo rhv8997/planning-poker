@@ -13,29 +13,72 @@ const COLORS = {
   muted: "#8AA4BF"
 };
 
+const TEAMS = ["Discovery", "CCOE", "Dentsu"];
+
 export default function LobbyPage() {
   const router = useRouter();
   const [name, setName] = useState("");
+  const [team, setTeam] = useState(TEAMS[0]);
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [rooms, setRooms] = useState([]);
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [selectedRoomId, setSelectedRoomId] = useState(null);
+  const [joinName, setJoinName] = useState("");
 
   useEffect(() => {
-    socket.on("activeRooms", setRooms);
-    return () => socket.off("activeRooms");
+    console.log("Socket connected:", socket.connected);
+    console.log("Socket ID:", socket.id);
+
+    const handleActiveRooms = (activeRooms) => {
+      console.log("Received active rooms:", activeRooms);
+      setRooms(activeRooms);
+    };
+
+    const handleConnect = () => {
+      console.log("Socket connected!");
+    };
+
+    socket.on("connect", handleConnect);
+    socket.on("activeRooms", handleActiveRooms);
+
+    return () => {
+      socket.off("connect", handleConnect);
+      socket.off("activeRooms", handleActiveRooms);
+    };
   }, []);
+
+  const formatDate = (dateStr) => {
+    const [year, month, day] = dateStr.split('-');
+    return `${day}-${month}-${year}`;
+  };
 
   const createRoom = () => {
     if (!name.trim()) return alert("Enter your name");
     localStorage.setItem("name", name);
 
-    socket.emit("createRoom", name, (roomId) => {
+    const roomName = `${team}-${formatDate(date)}`;
+    socket.emit("createRoom", { name, roomName }, (roomId) => {
       router.push(`/room/${roomId}`);
     });
   };
 
-  const joinRoom = (roomId) => {
-    if (!name.trim()) return alert("Enter your name first");
-    localStorage.setItem("name", name);
-    router.push(`/room/${roomId}`);
+  const openJoinModal = (roomId) => {
+    setSelectedRoomId(roomId);
+    setJoinName(name); // Pre-fill with current name if available
+    setShowJoinModal(true);
+  };
+
+  const closeJoinModal = () => {
+    setShowJoinModal(false);
+    setSelectedRoomId(null);
+    setJoinName("");
+  };
+
+  const joinRoom = () => {
+    if (!joinName.trim()) return alert("Enter your name");
+    localStorage.setItem("name", joinName);
+    setName(joinName); // Update the main name field
+    router.push(`/room/${selectedRoomId}`);
   };
 
   return (
@@ -53,6 +96,23 @@ export default function LobbyPage() {
           style={input}
         />
 
+        <select
+          value={team}
+          onChange={e => setTeam(e.target.value)}
+          style={input}
+        >
+          {TEAMS.map(t => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+
+        <input
+          type="date"
+          value={date}
+          onChange={e => setDate(e.target.value)}
+          style={input}
+        />
+
         <button onClick={createRoom} style={primaryButton}>
           Create New Room
         </button>
@@ -60,6 +120,7 @@ export default function LobbyPage() {
 
       <section style={roomsPanel}>
         <h2 style={roomsTitle}>Active Rooms</h2>
+        <p style={muted}>Rooms count: {rooms.length}</p>
 
         {rooms.length === 0 && (
           <p style={muted}>No active rooms</p>
@@ -70,10 +131,10 @@ export default function LobbyPage() {
             <button
               key={room.id}
               style={roomCard}
-              onClick={() => joinRoom(room.id)}
+              onClick={() => openJoinModal(room.id)}
             >
               <div>
-                <strong>Room {room.id}</strong>
+                <strong>{room.roomName || `Room ${room.id}`}</strong>
                 <p style={muted}>
                   {room.players} players
                 </p>
@@ -90,6 +151,31 @@ export default function LobbyPage() {
           ))}
         </div>
       </section>
+
+      {/* Join Room Modal */}
+      {showJoinModal && (
+        <div style={modalOverlay} onClick={closeJoinModal}>
+          <div style={modalContent} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ marginBottom: 24, fontSize: 24 }}>Join Room</h2>
+            <input
+              placeholder="Enter your name"
+              value={joinName}
+              onChange={(e) => setJoinName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && joinRoom()}
+              style={input}
+              autoFocus
+            />
+            <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+              <button onClick={joinRoom} style={primaryButton}>
+                Join
+              </button>
+              <button onClick={closeJoinModal} style={secondaryButton}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
@@ -172,3 +258,44 @@ const primaryButton = {
 };
 
 const muted = { color: COLORS.muted };
+
+const checkboxLabel = {
+  display: "flex",
+  alignItems: "center",
+  color: COLORS.text,
+  cursor: "pointer",
+  fontSize: 16
+};
+
+const modalOverlay = {
+  position: "fixed",
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  background: "rgba(0, 0, 0, 0.7)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 1000
+};
+
+const modalContent = {
+  background: COLORS.panel,
+  padding: 32,
+  borderRadius: 12,
+  border: `1px solid ${COLORS.border}`,
+  minWidth: 400,
+  maxWidth: 500
+};
+
+const secondaryButton = {
+  padding: "14px 18px",
+  background: "transparent",
+  color: COLORS.text,
+  border: `1px solid ${COLORS.border}`,
+  borderRadius: 8,
+  fontWeight: 700,
+  cursor: "pointer",
+  width: "fit-content"
+};

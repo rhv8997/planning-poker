@@ -4,7 +4,8 @@ import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { socket } from "@/lib/socket";
 
-const CARD_VALUES = ["0", "1", "2", "3", "5", "8", "13", "21", "?"];
+const CARD_VALUES = ["0", "1", "2", "3", "5", "8", "13", "21", "?", "⏸"];
+
 
 const COLORS = {
   bg: "#050B16",
@@ -20,6 +21,9 @@ export default function RoomPage() {
   const { id: roomId } = useParams();
   const [room, setRoom] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [sessionTotal, setSessionTotal] = useState(0);
+  const [chosenCard, setChosenCard] = useState(null);
+  const [mySocketId, setMySocketId] = useState(null);
   const joinedRef = useRef(false);
 
   const name =
@@ -27,16 +31,52 @@ export default function RoomPage() {
       ? localStorage.getItem("name")
       : null;
 
-  // Join once
+  const isScrumMaster = room?.scrumMasterId === mySocketId;
+
+  // Capture socket ID and join room
   useEffect(() => {
-    if (!roomId || !name || joinedRef.current) return;
-    joinedRef.current = true;
-    socket.emit("joinRoom", { roomId, name });
+    // Set socket ID immediately if available
+    if (socket.id) {
+      setMySocketId(socket.id);
+    }
+
+    const handleConnect = () => {
+      console.log("Socket connected with ID:", socket.id);
+      setMySocketId(socket.id);
+
+      // Join room after connection
+      if (roomId && name && !joinedRef.current) {
+        joinedRef.current = true;
+        console.log("Joining room:", roomId, "as", name);
+        socket.emit("joinRoom", { roomId, name });
+      }
+    };
+
+    // If already connected, join immediately
+    if (socket.connected && roomId && name && !joinedRef.current) {
+      joinedRef.current = true;
+      setMySocketId(socket.id);
+      console.log("Already connected, joining room:", roomId, "as", name);
+      socket.emit("joinRoom", { roomId, name });
+    }
+
+    socket.on("connect", handleConnect);
+    return () => socket.off("connect", handleConnect);
   }, [roomId, name]);
 
   // Room updates
   useEffect(() => {
-    const handler = (state) => setRoom(state);
+    const handler = (state) => {
+      console.log("Room state updated:", state);
+      console.log("My socket ID:", socket.id);
+      console.log("Scrum master ID:", state.scrumMasterId);
+      console.log("Am I scrum master?", socket.id === state.scrumMasterId);
+      setRoom(state);
+      // Always update socket ID when we get room state
+      if (socket.id) {
+        setMySocketId(socket.id);
+      }
+    };
     socket.on("roomState", handler);
     return () => socket.off("roomState", handler);
   }, []);
@@ -47,48 +87,102 @@ export default function RoomPage() {
 
   const hasVoted = (id) => room.votes[id] !== undefined;
 
+  // Calculate average
+  const numericVotes = Object.values(room.votes)
+    .filter(v => v !== "?" && v !== "—")
+    .map(v => parseInt(v, 10))
+    .filter(v => !isNaN(v));
+  const average = numericVotes.length > 0
+    ? (numericVotes.reduce((a, b) => a + b, 0) / numericVotes.length).toFixed(1)
+    : "?";
+
+  // Calculate session total (when votes are revealed)
+  const handleRevealVotes = () => {
+    socket.emit("revealVotes", roomId);
+  };
+
+  const handleChooseCard = (value) => {
+    const numValue = parseInt(value, 10);
+    if (!isNaN(numValue)) {
+      setChosenCard(value);
+      setSessionTotal(prev => prev + numValue);
+    }
+  };
+
+  const handleClearRound = () => {
+    if (room.revealed && !chosenCard) {
+      alert("Please choose a card before clearing the round");
+      return;
+    }
+    setSelected(null);
+    setChosenCard(null);
+    socket.emit("resetVotes", roomId);
+  };
+
+  const handleClaimScrumMaster = () => {
+    console.log("Claiming scrum master for room:", roomId);
+    console.log("My socket ID:", mySocketId);
+    console.log("Current scrum master:", room?.scrumMasterId);
+    socket.emit("claimScrumMaster", roomId);
+  };
+
+  const handleRevokeScrumMaster = () => {
+    console.log("Revoking scrum master for room:", roomId);
+    socket.emit("revokeScrumMaster", roomId);
+  };
+
   return (
-    <main style={page}>
+    <div style={pageWrapper}>
+      <main style={page}>
       <header style={header}>
-        <h1>Room {room.roomId}</h1>
+        <h1>{room.roomName || `Room ${room.roomId}`}</h1>
         <span style={muted}>{room.users.length} players</span>
       </header>
 
-      {/* PLAYER CARDS */}
-      <section style={players}>
-        {room.users.map((u) => {
-          const vote = room.votes[u.id];
+      {/* PLAYER CARDS - CENTER */}
+      <section style={playerCardsContainer}>
+        <section style={players}>
+          {room.users.map((u) => {
+            const vote = room.votes[u.id];
+            const isChosenCard = chosenCard === vote;
 
-          return (
-            <div key={u.id} style={player}>
-              <div style={nameStyle}>{u.name}</div>
+            return (
+              <div key={u.id} style={player}>
+                <div style={nameStyle}>{u.name}</div>
 
-              {/* FLIP CARD */}
-              <div
-                style={{
-                  ...flipCard,
-                  transform: room.revealed
-                    ? "rotateY(180deg)"
-                    : "rotateY(0deg)"
-                }}
-              >
-                {/* BACK */}
-                <div style={{ ...cardFace, ...cardBack }}>
-                  {hasVoted(u.id) ? "✓" : "—"}
-                </div>
+                {/* FLIP CARD */}
+                <div
+                  style={{
+                    ...flipCard,
+                    transform: room.revealed
+                      ? "rotateY(180deg)"
+                      : "rotateY(0deg)",
+                    ...(isChosenCard && room.revealed ? { boxShadow: `0 0 20px ${COLORS.accent}` } : {})
+                  }}
+                  onClick={() => {
+                    if (isScrumMaster && room.revealed && vote && vote !== "—") {
+                      handleChooseCard(vote);
+                    }
+                  }}
+                >
+                  {/* BACK */}
+                  <div style={{ ...cardFace, ...cardBack }}>
+                    {hasVoted(u.id) ? "✓" : "—"}
+                  </div>
 
-                {/* FRONT */}
-                <div style={{ ...cardFace, ...cardFront }}>
-                  {vote ?? "—"}
+                  {/* FRONT */}
+                  <div style={{ ...cardFace, ...cardFront }}>
+                    {vote ?? "—"}
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </section>
       </section>
 
-      {/* VOTING */}
-      {!room.revealed && (
+      {/* VOTING CARDS - ALWAYS VISIBLE */}
+      <section style={votingSection}>
         <section style={cards}>
           {CARD_VALUES.map((value) => (
             <button
@@ -101,70 +195,192 @@ export default function RoomPage() {
                     : COLORS.border,
                 transform:
                   selected === value
-                    ? "translateY(-6px)"
-                    : "none"
+                    ? "scale(1.25) translateY(-8px)"
+                    : "scale(1)",
+                fontSize: selected === value ? 36 : 28,
+                opacity: room.revealed ? 0.5 : 1
               }}
               onClick={() => {
-                setSelected(value);
-                socket.emit("castVote", {
-                  roomId,
-                  value
-                });
+                if (!room.revealed) {
+                  setSelected(value);
+                  socket.emit("castVote", {
+                    roomId,
+                    value
+                  });
+                }
               }}
             >
               {value}
             </button>
           ))}
         </section>
-      )}
+
+      </section>
 
       {/* ACTIONS */}
       <footer style={footer}>
-        {!room.revealed ? (
+        {isScrumMaster && !room.revealed && (
           <button
             style={primaryButton}
-            onClick={() => socket.emit("revealVotes", roomId)}
+            onClick={handleRevealVotes}
           >
             Reveal Votes
           </button>
-        ) : (
-          <button
-            style={secondaryButton}
-            onClick={() => {
-              setSelected(null);
-              socket.emit("resetVotes", roomId);
-            }}
-          >
-            Reset Round
-          </button>
+        )}
+        {isScrumMaster && room.revealed && !chosenCard && (
+          <div style={warningMessage}>
+            ⚠️ Please choose a card before clearing the round
+          </div>
         )}
       </footer>
     </main>
+
+    {/* STATS SIDEBAR */}
+    <aside style={sidebar}>
+      <div style={statsCard}>
+        <div style={statsLabel}>Average</div>
+        <div style={statsValue}>{room.revealed ? average : "?"}</div>
+      </div>
+      <div style={statsCard}>
+        <div style={statsLabel}>Chosen Card</div>
+        <div style={statsValue}>{chosenCard || "?"}</div>
+      </div>
+      <div style={statsCard}>
+        <div style={statsLabel}>Session Total</div>
+        <div style={statsValue}>{sessionTotal}</div>
+      </div>
+      <div style={statsCard}>
+        <div style={statsLabel}>Votes In</div>
+        <div style={statsValue}>{Object.keys(room.votes).length}</div>
+      </div>
+      <div style={statsCard}>
+        <div style={statsLabel}>Players</div>
+        <div style={statsValue}>{room.users.length}</div>
+      </div>
+      {isScrumMaster && (
+        <button
+          style={{
+            ...secondaryButton,
+            marginTop: 16,
+            width: "100%",
+            padding: "12px 8px",
+            fontSize: 14
+          }}
+          onClick={handleClearRound}
+        >
+          Clear Round
+        </button>
+      )}
+      {isScrumMaster && (
+        <>
+          <div style={{
+            marginTop: 12,
+            padding: 8,
+            background: COLORS.accent,
+            color: COLORS.bg,
+            borderRadius: 8,
+            textAlign: "center",
+            fontWeight: 700,
+            fontSize: 12
+          }}>
+            SCRUM MASTER
+          </div>
+          <button
+            style={{
+              ...secondaryButton,
+              marginTop: 12,
+              width: "100%",
+              padding: "10px 8px",
+              fontSize: 13,
+              color: "#ff4444",
+              borderColor: "#ff4444"
+            }}
+            onClick={handleRevokeScrumMaster}
+          >
+            Revoke Role
+          </button>
+        </>
+      )}
+      {!room.scrumMasterId && (
+        <button
+          style={{
+            ...secondaryButton,
+            marginTop: 16,
+            width: "100%",
+            padding: "12px 8px",
+            fontSize: 14
+          }}
+          onClick={handleClaimScrumMaster}
+        >
+          Become Scrum Master
+        </button>
+      )}
+      {room.scrumMasterId && !isScrumMaster && (
+        <div style={{
+          marginTop: 12,
+          padding: 8,
+          background: COLORS.panel,
+          border: `1px solid ${COLORS.border}`,
+          borderRadius: 8,
+          textAlign: "center",
+          fontSize: 12,
+          color: COLORS.muted
+        }}>
+          Scrum Master: {room.users.find(u => u.id === room.scrumMasterId)?.name || "Unknown"}
+        </div>
+      )}
+    </aside>
+    </div>
   );
 }
 
 /* ================= STYLES ================= */
 
-const page = {
+const pageWrapper = {
+  display: "flex",
   minHeight: "100vh",
   background: COLORS.bg,
+  gap: 20
+};
+
+const page = {
+  flex: 1,
   color: COLORS.text,
   padding: 32,
   display: "flex",
   flexDirection: "column",
-  gap: 32
+  gap: 32,
+  alignItems: "center",
+  overflow: "auto"
 };
 
 const header = {
   display: "flex",
   justifyContent: "space-between",
-  alignItems: "center"
+  alignItems: "center",
+  width: "100%",
+  maxWidth: 1200
+};
+
+const playerCardsContainer = {
+  display: "flex",
+  justifyContent: "center",
+  width: "100%",
+  flex: 1
 };
 
 const players = {
   display: "flex",
   gap: 20,
-  flexWrap: "wrap"
+  flexWrap: "wrap",
+  justifyContent: "center",
+  alignItems: "flex-start"
+};
+
+const votingSection = {
+  display: "flex",
+  justifyContent: "center",
+  width: "100%"
 };
 
 const player = {
@@ -179,8 +395,8 @@ const nameStyle = {
 /* --- FLIP CARD --- */
 
 const flipCard = {
-  width: 90,
-  height: 130,
+  width: 160,
+  height: 230,
   position: "relative",
   transformStyle: "preserve-3d",
   transition: "transform 0.6s cubic-bezier(.4,.2,.2,1)"
@@ -195,7 +411,7 @@ const cardFace = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  fontSize: 32,
+  fontSize: 56,
   fontWeight: 700,
   border: `2px solid ${COLORS.border}`
 };
@@ -218,7 +434,7 @@ const cards = {
   gridTemplateColumns: "repeat(auto-fit, minmax(80px, 1fr))",
   gap: 16,
   maxWidth: 600,
-  margin: "0 auto"
+  width: "100%"
 };
 
 const voteCard = {
@@ -231,6 +447,30 @@ const voteCard = {
   border: `2px solid ${COLORS.border}`,
   cursor: "pointer",
   transition: "all 0.15s ease"
+};
+
+// Selected card styling is applied dynamically with transform and scale
+
+const specialCardsSection = {
+  display: "flex",
+  gap: 12,
+  marginTop: 16,
+  justifyContent: "center",
+  flexWrap: "wrap"
+};
+
+const specialCard = {
+  width: 80,
+  height: 120,
+  fontSize: 28,
+  fontWeight: 700,
+  background: COLORS.panel,
+  color: COLORS.text,
+  borderRadius: 16,
+  border: `2px solid ${COLORS.border}`,
+  cursor: "pointer",
+  transition: "all 0.15s ease",
+  padding: 0
 };
 
 /* --- ACTIONS --- */
@@ -260,3 +500,50 @@ const secondaryButton = {
 };
 
 const muted = { color: COLORS.muted };
+
+const warningMessage = {
+  marginTop: 16,
+  padding: "12px 16px",
+  background: "#F59E0B20",
+  border: "2px solid #F59E0B",
+  borderRadius: 8,
+  color: "#F59E0B",
+  fontWeight: 600,
+  fontSize: 14,
+  textAlign: "center"
+};
+
+/* --- SIDEBAR --- */
+
+const sidebar = {
+  width: 200,
+  background: COLORS.panel,
+  padding: 20,
+  borderLeft: `2px solid ${COLORS.border}`,
+  display: "flex",
+  flexDirection: "column",
+  gap: 16,
+  paddingTop: 32
+};
+
+const statsCard = {
+  textAlign: "center",
+  padding: 16,
+  background: COLORS.bg,
+  borderRadius: 12,
+  border: `2px solid ${COLORS.border}`
+};
+
+const statsLabel = {
+  fontSize: 12,
+  color: COLORS.muted,
+  marginBottom: 8,
+  textTransform: "uppercase",
+  fontWeight: 600
+};
+
+const statsValue = {
+  fontSize: 28,
+  fontWeight: 700,
+  color: COLORS.accent
+};
